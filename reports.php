@@ -1,0 +1,369 @@
+<?php
+session_start();
+
+if (!isset($_SESSION['admin']))
+{
+    header("Location: login.php");
+    exit();
+}
+
+include("includes/db.php");
+
+/* TOTAL PORTS */
+
+$total_logs_query =
+"SELECT COUNT(*) AS total_logs
+ FROM traffic_logs";
+
+$total_logs_result =
+mysqli_query($conn, $total_logs_query);
+
+$total_logs =
+mysqli_fetch_assoc($total_logs_result);
+
+
+/* TOTAL TRAFFIC */
+
+$total_traffic_query =
+"SELECT SUM(traffic_count) AS total_traffic
+ FROM traffic_logs";
+
+$total_traffic_result =
+mysqli_query($conn, $total_traffic_query);
+
+$total_traffic =
+mysqli_fetch_assoc($total_traffic_result);
+
+
+/* ACTIVE PORTS */
+
+$active_logs_query =
+"SELECT COUNT(*) AS active_logs
+ FROM traffic_logs
+ WHERE status='open'";
+
+$active_logs_result =
+mysqli_query($conn, $active_logs_query);
+
+$active_logs =
+mysqli_fetch_assoc($active_logs_result);
+
+
+/* CHART DATA */
+
+$chart_query =
+"SELECT protocol, COUNT(*) AS total
+ FROM traffic_logs
+ GROUP BY protocol";
+
+$chart_result =
+mysqli_query($conn, $chart_query);
+
+$labels = [];
+$data = [];
+
+while($chart_row = mysqli_fetch_assoc($chart_result))
+{
+    $labels[] = $chart_row['protocol'];
+    $data[] = $chart_row['total'];
+}
+?>
+
+<?php include("includes/header.php"); ?>
+
+<?php include("includes/sidebar.php"); ?>
+
+<div class="main-content">
+
+    <!-- TOPBAR -->
+
+    <div class="topbar">
+
+        <div>
+
+            <h2>Reports & Analytics</h2>
+
+            <p>
+                Traffic monitoring statistics and reports
+            </p>
+
+        </div>
+
+    </div>
+
+    <!-- REPORT CARDS -->
+
+    <div class="cards">
+
+        <div class="card-box">
+
+            <h3>Total Ports</h3>
+
+            <p>
+                <?php echo $total_logs['total_logs']; ?>
+            </p>
+
+        </div>
+
+        <div class="card-box">
+
+            <h3>Total Traffic</h3>
+
+            <p>
+                <?php echo $total_traffic['total_traffic']; ?> MB
+            </p>
+
+        </div>
+
+        <div class="card-box">
+
+            <h3>Active Ports</h3>
+
+            <p>
+                <?php echo $active_logs['active_logs']; ?>
+            </p>
+
+        </div>
+
+    </div>
+
+    <!-- REPORT SECTION -->
+
+    <div class="charts-section">
+
+        <!-- CHART -->
+
+        <div class="chart-card">
+
+            <h3>Protocol Analytics</h3>
+
+            <canvas id="reportChart"></canvas>
+
+        </div>
+
+        <!-- SUMMARY -->
+
+        <div class="chart-card">
+
+            <h3>System Summary</h3>
+
+            <div class="summary-box">
+
+                <div class="summary-item">
+
+                    <span>Total Ports</span>
+
+                    <strong>
+                        <?php echo $total_logs['total_logs']; ?>
+                    </strong>
+
+                </div>
+
+                <div class="summary-item">
+
+                    <span>Active Ports</span>
+
+                    <strong>
+                        <?php echo $active_logs['active_logs']; ?>
+                    </strong>
+
+                </div>
+
+                <div class="summary-item">
+
+                    <span>Total Traffic</span>
+
+                    <strong>
+                        <?php echo $total_traffic['total_traffic']; ?> MB
+                    </strong>
+
+                </div>
+
+                <div class="summary-item">
+
+                    <span>Monitoring Status</span>
+
+                    <strong class="online-status">
+                        Online
+                    </strong>
+
+                </div>
+
+            </div>
+
+            <!-- BUTTONS -->
+
+            <div class="report-buttons">
+
+                <button class="download-btn"
+                        onclick="window.print()">
+
+                    Print Report
+
+                </button>
+
+                <button class="download-btn pdf-btn"
+                        onclick="downloadPDF()">
+
+                    Download PDF
+
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<?php include("includes/footer.php"); ?>
+
+<!-- PDF + CHART -->
+
+<script>
+
+async function downloadPDF()
+{
+    const { jsPDF } = window.jspdf;
+
+    const doc = new jsPDF();
+
+    doc.setFontSize(22);
+
+    doc.text(
+        "Port Monitoring System Report",
+        20,
+        20
+    );
+
+    doc.setFontSize(14);
+
+    doc.text(
+        "Network Analytics Summary",
+        20,
+        35
+    );
+
+    doc.line(20, 40, 190, 40);
+
+    doc.text(
+        "Total Ports: <?php echo $total_logs['total_logs']; ?>",
+        20,
+        60
+    );
+
+    doc.text(
+        "Active Ports: <?php echo $active_logs['active_logs']; ?>",
+        20,
+        75
+    );
+
+    doc.text(
+        "Total Traffic: <?php echo $total_traffic['total_traffic']; ?> MB",
+        20,
+        90
+    );
+
+    doc.text(
+        "Monitoring Status: Online",
+        20,
+        105
+    );
+
+    doc.text(
+        "Generated By: Port Monitoring System",
+        20,
+        130
+    );
+
+    doc.save("port-monitoring-report.pdf");
+}
+
+/* CHART */
+
+const reportChart =
+document.getElementById('reportChart');
+
+new Chart(reportChart, {
+
+    type: 'line',
+
+    data: {
+
+        labels:
+        <?php echo json_encode($labels); ?>,
+
+        datasets: [{
+
+            label: 'Protocols',
+
+            data:
+            <?php echo json_encode($data); ?>,
+
+            borderColor: '#3b82f6',
+
+            backgroundColor:
+            'rgba(59,130,246,0.2)',
+
+            fill: true,
+
+            tension: 0.4
+
+        }]
+    },
+
+    options: {
+
+        responsive: true,
+
+        maintainAspectRatio: false,
+
+        plugins: {
+
+            legend: {
+
+                labels: {
+
+                    color: '#ffffff'
+
+                }
+            }
+        },
+
+        scales: {
+
+            x: {
+
+                ticks: {
+
+                    color: '#ffffff'
+
+                },
+
+                grid: {
+
+                    color:'rgba(255,255,255,0.05)'
+
+                }
+            },
+
+            y: {
+
+                ticks: {
+
+                    color:'#ffffff'
+
+                },
+
+                grid: {
+
+                    color:'rgba(255,255,255,0.05)'
+
+                }
+            }
+        }
+    }
+});
+
+</script>
