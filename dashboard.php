@@ -1,452 +1,354 @@
+
 <?php
 session_start();
 
-if(!isset($_SESSION['admin']))
-{
+if (!isset($_SESSION['admin'])) {
     header("Location: login.php");
+    exit;
 }
 
-include("includes/db.php");
-/* TOTAL PORTS */
+require_once("includes/db.php");
 
-$total_ports_query =
-"SELECT COUNT(*) AS total_ports
- FROM traffic_logs";
+// Dashboard statistics
+$total_ports_query = "
+    SELECT COUNT(*) AS total_ports
+    FROM traffic_logs
+";
+$total_ports_result = mysqli_query($conn, $total_ports_query);
+$total_ports = mysqli_fetch_assoc($total_ports_result);
 
-$total_ports_result =
-mysqli_query($conn, $total_ports_query);
+$active_ports_query = "
+    SELECT COUNT(*) AS active_ports
+    FROM traffic_logs
+    WHERE status = 'open'
+";
+$active_ports_result = mysqli_query($conn, $active_ports_query);
+$active_ports = mysqli_fetch_assoc($active_ports_result);
 
-$total_ports =
-mysqli_fetch_assoc($total_ports_result);
+$inactive_ports_query = "
+    SELECT COUNT(*) AS inactive_ports
+    FROM traffic_logs
+    WHERE status != 'open'
+";
+$inactive_ports_result = mysqli_query($conn, $inactive_ports_query);
+$inactive_ports = mysqli_fetch_assoc($inactive_ports_result);
 
+$total_traffic_query = "
+    SELECT COALESCE(SUM(traffic_count), 0) AS total_traffic
+    FROM traffic_logs
+";
+$total_traffic_result = mysqli_query($conn, $total_traffic_query);
+$total_traffic = mysqli_fetch_assoc($total_traffic_result);
 
-/* ACTIVE PORTS */
-$active_ports_query =
-"SELECT COUNT(*) AS active_ports
- FROM traffic_logs
- WHERE status='open'";
+// Chart data
+$protocol_labels = [];
+$traffic_data = [];
 
-$active_ports_result =
-mysqli_query($conn, $active_ports_query);
+$chart_query = "
+    SELECT protocol, SUM(traffic_count) AS total
+    FROM traffic_logs
+    GROUP BY protocol
+";
+$chart_result = mysqli_query($conn, $chart_query);
 
-$active_ports =
-mysqli_fetch_assoc($active_ports_result);
+while ($chart = mysqli_fetch_assoc($chart_result)) {
+    $protocol_labels[] = $chart['protocol'];
+    $traffic_data[] = (float) $chart['total'];
+}
 
+$protocol_json = json_encode(
+    $protocol_labels,
+    JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+);
 
-/* INACTIVE PORTS */
+$traffic_json = json_encode($traffic_data);
 
-$inactive_ports_query =
-"SELECT COUNT(*) AS inactive_ports
- FROM traffic_logs
- WHERE status!='open'";
+$active_count = (int) $active_ports['active_ports'];
+$inactive_count = (int) $inactive_ports['inactive_ports'];
 
-$inactive_ports_result =
-mysqli_query($conn, $inactive_ports_query);
-
-$inactive_ports =
-mysqli_fetch_assoc($inactive_ports_result);
-
-
-/* TOTAL TRAFFIC */
-
-$total_traffic_query =
-"SELECT SUM(traffic_count) AS total_traffic
- FROM traffic_logs";
-
-$total_traffic_result =
-mysqli_query($conn, $total_traffic_query);
-
-$total_traffic =
-mysqli_fetch_assoc($total_traffic_result);
+$admin_name = htmlspecialchars(
+    $_SESSION['admin'],
+    ENT_QUOTES,
+    'UTF-8'
+);
 ?>
 
-
 <?php include("includes/header.php"); ?>
-
 <?php include("includes/sidebar.php"); ?>
 
 <div class="main-content">
 
     <div class="topbar">
+        <div>
+            <h2>Dashboard</h2>
+            <p>Welcome, <?= $admin_name ?></p>
+        </div>
 
-    <div>
+        <div class="live-clock">
+            <h3 id="liveTime"></h3>
+            <p id="liveDate"></p>
+        </div>
+    </div>
 
-        <h2>Dashboard</h2>
+    <div class="cards">
 
-        <p>
-            Welcome,
-            <?php echo $_SESSION['admin']; ?>
-        </p>
+        <div class="card-box">
+            <h3>Total Ports</h3>
+            <p><?= (int) $total_ports['total_ports'] ?></p>
+        </div>
+
+        <div class="card-box">
+            <h3>Open Ports</h3>
+            <p><?= $active_count ?></p>
+        </div>
+
+        <div class="card-box">
+            <h3>Filtered Ports</h3>
+            <p><?= $inactive_count ?></p>
+        </div>
+
+        <div class="card-box">
+            <h3>Total Traffic</h3>
+            <p><?= (float) $total_traffic['total_traffic'] ?> MB</p>
+        </div>
 
     </div>
 
-    <div class="live-clock">
+    <!-- Port Scanner -->
+    <div class="chart-card" style="margin-top:30px;">
 
-        <h3 id="liveTime"></h3>
+        <h3>Real-Time Port Scanner</h3>
+        <br>
 
-        <p id="liveDate"></p>
+        <input
+            type="text"
+            id="ipAddress"
+            placeholder="Enter IP Address"
+            value="127.0.0.1"
+            autocomplete="off"
+            style="
+                padding:12px;
+                width:300px;
+                max-width:90%;
+                border:none;
+                border-radius:8px;
+                outline:none;
+                margin-right:10px;
+            "
+        >
 
-    </div>
+        <button
+            type="button"
+            id="scanButton"
+            style="
+                padding:12px 20px;
+                background:#3b82f6;
+                border:none;
+                border-radius:8px;
+                color:white;
+                cursor:pointer;
+            "
+        >
+            Scan Now
+        </button>
 
-</div>
+        <br><br>
 
-<div class="cards">
-
-    <div class="card-box">
-
-        <h3>Total Ports</h3>
-
-        <p>
-            <?php echo $total_ports['total_ports']; ?>
-        </p>
-
-    </div>
-
-    <div class="card-box">
-
-        <h3>Open Ports</h3>
-
-        <p>
-            <?php echo $active_ports['active_ports']; ?>
-        </p>
-
-    </div>
-
-    <div class="card-box">
-
-        <h3>Filtered Ports</h3>
-
-        <p>
-            <?php echo $inactive_ports['inactive_ports']; ?>
-        </p>
-
-    </div>
-
-    <div class="card-box">
-
-        <h3>Total Traffic</h3>
-
-        <p>
-            <?php echo $total_traffic['total_traffic']; ?> MB
-        </p>
-
-    </div>
-
-</div>
-
-
-<!-- REAL TIME LIVE SCANNER -->
-
-<div class="chart-card" style="margin-top:30px;">
-
-    <h3>Real-Time Port Scanner</h3>
-
-    <br>
-
-    <input
-        type="text"
-        id="ipAddress"
-        placeholder="Enter IP Address"
-        value="127.0.0.1"
-        style="
-        padding:12px;
-        width:300px;
-        border:none;
-        border-radius:8px;
-        outline:none;
-        margin-right:10px;
-        ">
-
-    <button
-        onclick="scanPorts()"
-        style="
-        padding:12px 20px;
-        background:#3b82f6;
-        border:none;
-        border-radius:8px;
-        color:white;
-        cursor:pointer;
-        ">
-
-        Scan Now
-
-    </button>
-
-    <br><br>
-
-    <div
-        id="scanResults"
-        style="
-        background:#0f172a;
-        padding:20px;
-        border-radius:10px;
-        min-height:200px;
-        overflow:auto;
-        color:#ffffff;
-        font-family:monospace;
-        ">
-    </div>
-
-</div>
-<div class="charts-section">
-
-    <!-- BAR CHART -->
-
-    <div class="chart-card">
-
-        <h3>Port Traffic Overview</h3>
-
-        <canvas id="trafficChart"></canvas>
+        <div
+            id="scanResults"
+            role="status"
+            aria-live="polite"
+            style="
+                background:#0f172a;
+                padding:20px;
+                border-radius:10px;
+                min-height:200px;
+                overflow:auto;
+                color:#ffffff;
+                font-family:monospace;
+                white-space:pre-wrap;
+            "
+        ></div>
 
     </div>
 
-    <!-- PIE CHART -->
+    <div class="charts-section">
 
-    <div class="chart-card">
+        <div class="chart-card">
+            <h3>Port Traffic Overview</h3>
+            <canvas id="trafficChart"></canvas>
+        </div>
 
-        <h3>Port Status Analysis</h3>
-
-        <canvas id="statusChart"></canvas>
+        <div class="chart-card">
+            <h3>Port Status Analysis</h3>
+            <canvas id="statusChart"></canvas>
+        </div>
 
     </div>
 
 </div>
-
-</div>
-
 
 <?php include("includes/footer.php"); ?>
 
 <script>
-    /* LIVE CLOCK */
-
-function updateClock()
-{
+// Live clock
+function updateClock() {
     const now = new Date();
 
-    const time =
-    now.toLocaleTimeString();
+    document.getElementById("liveTime").textContent =
+        now.toLocaleTimeString();
 
-    const date =
-    now.toDateString();
-
-    document.getElementById("liveTime")
-    .innerHTML = time;
-
-    document.getElementById("liveDate")
-    .innerHTML = date;
+    document.getElementById("liveDate").textContent =
+        now.toDateString();
 }
-
-setInterval(updateClock, 1000);
 
 updateClock();
+setInterval(updateClock, 1000);
 
-/* BAR CHART */
+// Chart data generated by PHP
+const protocolLabels = <?= $protocol_json ?: '[]' ?>;
+const trafficData = <?= $traffic_json ?: '[]' ?>;
 
-const trafficChart =
-document.getElementById('trafficChart');
+const activeCount = <?= $active_count ?>;
+const inactiveCount = <?= $inactive_count ?>;
 
-new Chart(trafficChart, {
+// Traffic bar chart
+const trafficCanvas = document.getElementById("trafficChart");
 
-    type: 'bar',
-
-    data: {
-
-    labels:
-<?php
-
-$protocol_labels = [];
-$traffic_data = [];
-
-$chart_query =
-"SELECT protocol,
-SUM(traffic_count) AS total
-FROM traffic_logs
-GROUP BY protocol";
-
-$chart_result =
-mysqli_query($conn, $chart_query);
-
-while($chart =
-mysqli_fetch_assoc($chart_result))
-{
-    $protocol_labels[] =
-    $chart['protocol'];
-
-    $traffic_data[] =
-    $chart['total'];
-}
-
-echo json_encode($protocol_labels);
-
-?>,
-
-datasets: [{
-
-    label: 'Traffic Usage',
-
-    data:
-    <?php echo json_encode($traffic_data); ?>,
-
-       
-
-            backgroundColor: [
-                '#3b82f6',
-                '#8b5cf6',
-                '#06b6d4',
-                '#10b981',
-                '#f59e0b'
-            ],
-
-            borderRadius: 10,
-            borderWidth: 0
-
-        }]
-    },
-
-    options: {
-
-        responsive: true,
-        maintainAspectRatio: false,
-
-        plugins: {
-
-            legend: {
-
-                labels: {
-                    color: '#ffffff',
-                    font: {
-                        size: 14
-                    }
-                }
-            }
+if (trafficCanvas && typeof Chart !== "undefined") {
+    new Chart(trafficCanvas, {
+        type: "bar",
+        data: {
+            labels: protocolLabels,
+            datasets: [{
+                label: "Traffic Usage",
+                data: trafficData,
+                backgroundColor: [
+                    "#3b82f6",
+                    "#8b5cf6",
+                    "#06b6d4",
+                    "#10b981",
+                    "#f59e0b"
+                ],
+                borderRadius: 10,
+                borderWidth: 0
+            }]
         },
-
-        scales: {
-
-            x: {
-
-                ticks: {
-                    color: '#e2e8f0'
-                },
-
-                grid: {
-                    color: 'rgba(255,255,255,0.05)'
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#ffffff",
+                        font: { size: 14 }
+                    }
                 }
             },
-
-            y: {
-
-                beginAtZero: true,
-
-                ticks: {
-                    color: '#e2e8f0'
+            scales: {
+                x: {
+                    ticks: { color: "#e2e8f0" },
+                    grid: { color: "rgba(255,255,255,0.05)" }
                 },
-
-                grid: {
-                    color: 'rgba(255,255,255,0.05)'
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: "#e2e8f0" },
+                    grid: { color: "rgba(255,255,255,0.05)" }
                 }
             }
         }
-    }
-});
+    });
 
-
-/* PIE CHART */
-
-const statusChart =
-document.getElementById('statusChart');
-
-new Chart(statusChart, {
-
-    type: 'doughnut',
-
-    data: {
-
-        labels: [
-            'Active',
-            'Inactive'
-        ],
-
-        datasets: [{
-
-            data: [
-                <?php echo $active_ports['active_ports']; ?>,
-                <?php echo $inactive_ports['inactive_ports']; ?>
-            ],
-
-            backgroundColor: [
-                '#10b981',
-                '#ef4444'
-            ],
-
-            borderWidth: 0
-        }]
-    },
-
-    options: {
-
-        responsive: true,
-        maintainAspectRatio: false,
-
-        plugins: {
-
-            legend: {
-
-                labels: {
-
-                    color: '#ffffff',
-
-                    font: {
-                        size: 14
+    // Port status doughnut chart
+    new Chart(document.getElementById("statusChart"), {
+        type: "doughnut",
+        data: {
+            labels: ["Active", "Inactive"],
+            datasets: [{
+                data: [activeCount, inactiveCount],
+                backgroundColor: ["#10b981", "#ef4444"],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: "#ffffff",
+                        font: { size: 14 }
                     }
                 }
             }
         }
-    }
-});
-
-/* REAL TIME PORT SCANNER */
-
-function scanPorts()
-{
-    let ip =
-    document.getElementById("ipAddress").value;
-
-    document.getElementById("scanResults")
-    .innerHTML =
-    "Real-time scanning in progress...";
-
-    fetch("scan.php?ip=" + ip)
-
-    .then(response => response.text())
-
-    .then(data => {
-
-        document.getElementById("scanResults")
-        .innerHTML = data;
-
-    })
-
-    .catch(error => {
-
-        document.getElementById("scanResults")
-        .innerHTML =
-        "Error scanning ports.";
-
     });
 }
 
+// Port scanner
+const ipInput = document.getElementById("ipAddress");
+const scanButton = document.getElementById("scanButton");
+const scanResults = document.getElementById("scanResults");
 
-/* AUTO REFRESH EVERY 10 SECONDS */
+let scanInProgress = false;
 
-setInterval(() => {
+async function scanPorts() {
+    if (scanInProgress) return;
 
-    if(document.getElementById("ipAddress").value != "")
-    {
-        scanPorts();
+    const ip = ipInput.value.trim();
+
+    // Accept valid IPv4 or IPv6 syntax.
+    // scan.php must separately enforce authorized scan targets.
+    const ipv4Pattern =
+        /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
+
+    const ipv6Pattern = /^[0-9a-fA-F:]+$/;
+
+    if (
+        !ipv4Pattern.test(ip) &&
+        !(ip.includes(":") && ipv6Pattern.test(ip) && ip.length <= 39)
+    ) {
+        scanResults.textContent = "Please enter a valid IP address.";
+        return;
     }
 
-}, 20000); 
+    scanInProgress = true;
+    scanButton.disabled = true;
+    scanResults.textContent = "Scanning in progress...";
 
+    try {
+        const response = await fetch(
+            "scan.php?ip=" + encodeURIComponent(ip),
+            {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { "Accept": "text/plain" }
+            }
+        );
+
+        const data = await response.text();
+
+        if (!response.ok) {
+            throw new Error("Scan request failed.");
+        }
+
+        // Display the response as text, not executable HTML.
+        scanResults.textContent = data;
+    } catch (error) {
+        scanResults.textContent =
+            "Unable to complete the scan. Check scan.php and try again.";
+    } finally {
+        scanInProgress = false;
+        scanButton.disabled = false;
+    }
+}
+
+scanButton.addEventListener("click", scanPorts);
+
+// Automatic refresh every 20 seconds
+setInterval(() => {
+    if (ipInput.value.trim() !== "" && !scanInProgress) {
+        scanPorts();
+    }
+}, 20000);
 </script>

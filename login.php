@@ -1,26 +1,48 @@
+
 <?php
 session_start();
-include("includes/db.php");
+require_once("includes/db.php");
 
-if(isset($_POST['login']))
-{
-    $username = $_POST['username'];
-    $password = $_POST['password'];
+$error = "";
 
-    $query = "SELECT * FROM admins 
-              WHERE username='$username' 
-              AND password='$password'";
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST["login"])) {
 
-    $result = mysqli_query($conn, $query);
+    $username = trim($_POST["username"] ?? "");
+    $password = $_POST["password"] ?? "";
 
-    if(mysqli_num_rows($result) > 0)
-    {
-        $_SESSION['admin'] = $username;
-        header("Location: dashboard.php");
-    }
-    else
-    {
-        $error = "Invalid Username or Password";
+    if ($username !== "" && $password !== "") {
+
+        $query = "SELECT username, password FROM admins WHERE username = ? LIMIT 1";
+        $stmt = mysqli_prepare($conn, $query);
+
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, "s", $username);
+            mysqli_stmt_execute($stmt);
+
+            $result = mysqli_stmt_get_result($stmt);
+            $admin = mysqli_fetch_assoc($result);
+
+            if ($admin && password_verify($password, $admin["password"])) {
+
+                session_regenerate_id(true);
+                $_SESSION["admin"] = $admin["username"];
+
+                mysqli_stmt_close($stmt);
+                header("Location: dashboard.php");
+                exit;
+
+            } else {
+                $error = "Invalid Username or Password";
+            }
+
+            if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+                mysqli_stmt_close($stmt);
+            }
+        } else {
+            $error = "Something went wrong. Please try again.";
+        }
+    } else {
+        $error = "Please enter username and password.";
     }
 }
 ?>
@@ -29,36 +51,42 @@ if(isset($_POST['login']))
 <html>
 <head>
     <title>Admin Login</title>
-
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
-
 <body>
 
 <div class="login-container">
 
     <h2>Port Monitoring System</h2>
 
-    <?php
-    if(isset($error))
-    {
-        echo "<p class='error'>$error</p>";
-    }
-    ?>
+    <?php if ($error !== ""): ?>
+        <p class="error">
+            <?= htmlspecialchars($error, ENT_QUOTES, "UTF-8") ?>
+        </p>
+    <?php endif; ?>
 
     <form method="POST">
+        <input
+            type="text"
+            name="username"
+            placeholder="Username"
+            autocomplete="username"
+            required
+        >
 
-        <input type="text" name="username" placeholder="Username" required>
+        <input
+            type="password"
+            name="password"
+            placeholder="Password"
+            autocomplete="current-password"
+            required
+        >
 
-        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit" name="login">Login</button>
 
-       <button type="submit" name="login">
-        Login
-    </button>
-    <a href="index.php" class="back-home-btn">
-    ← Back to Homepage
-</a>
-
+        <a href="index.php" class="back-home-btn">
+            ← Back to Homepage
+        </a>
     </form>
 
 </div>
